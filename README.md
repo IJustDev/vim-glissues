@@ -23,7 +23,8 @@ You need to setup the following global vim variables:
   `https://gitlab.com`. Don't use a trailing `/`!
 - `g:gitlab_server_port`: Defaults to 443
 - (`g:gitlab_projectid`): Your project ID. You get this via gitlabs web
-  interface (project settings). _This is automatically set via `git remote`_!
+  interface (project settings). The project id can be specified in a settings.json file. Whichs content should look like this:
+  ```{"projectId": "your-project-id"}```
 - (`g:gitlab_alter`): Should the plugin send altering requests to the server?
   (default true)
 - (`g:gitlab_debug`): Print debug messages

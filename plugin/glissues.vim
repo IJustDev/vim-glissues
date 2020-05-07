@@ -21,24 +21,6 @@ if !exists("g:gitlab_server_port")
 	let g:gitlab_server_port = "443"
 endif
 
-if !exists("g:gitlab_projectid")
-	" try to fetch id from git remote
-	let s:pid_smallurl = substitute(g:gitlab_server, 'https:\/\/', "", "")
-	let s:pid_remote_result = split(system('git remote -v | grep "'.s:pid_smallurl.'"'), '\n')
-
-	" if some repository uses the server url (without https://)
-	if exists("s:pid_remote_result[0]")
-		let s:pid_remote_line = s:pid_remote_result[0]
-		let s:pid_parsed = substitute(s:pid_remote_line, '^.\+\t\%(.\+@'.substitute(s:pid_smallurl, '\.', '\\.', '').':\|https\?:\/\/'.substitute(s:pid_smallurl, '\.', '\\.', '').'\%(:'.g:gitlab_server_port.'\)\?\/\)\(.\+\)\/\(.\+\)\.git.*$', '\1%2F\2', "g")
-
-		" set project id (user/repo urlencoded style)
-		let g:gitlab_projectid = s:pid_parsed
-	else
-		" set non-existing project id
-		let g:gitlab_projectid = "0"
-	endif
-endif
-
 if !exists("g:gitlab_alter")
 	let g:gitlab_alter = v:true
 endif
@@ -47,69 +29,55 @@ if !exists("g:gitlab_debug")
 	let g:gitlab_debug = v:false
 endif
 
+
+function! s:ReadGitLabProjectIdFromConfig()
+    if !exists("g:gitlab_projectid")
+        " try to fetch id from git remote
+        if filereadable(glob("./settings.json"))
+            let l:lines = readfile(glob("./settings.json"))
+            let l:json = join(l:lines, "\n")
+            let l:settings = json_decode(l:json)
+            let g:gitlab_projectid = l:settings["projectId"]
+        else
+            let g:gitlab_projectid = ""
+        endif
+    endif
+endfunction
+
 " Section: Loading of issues is done here
 "
 function! s:LoadIssues(state, notes)
+    call s:ReadGitLabProjectIdFromConfig()
 	let l:command = "sh -c \"curl -s --header 'PRIVATE-TOKEN: ".g:gitlab_token."' ".g:gitlab_server.":".g:gitlab_server_port."/api/v4/projects/".g:gitlab_projectid."/issues?state=".a:state."\""
-	echo "Trying to fetch data from server: ".g:gitlab_server."\n"
 	let l:json = system(l:command)
 	let l:data = json_decode(l:json)
-	echo "Issue Data fetched. Loading Notes...\n"
 
-	let l:collection = []
-	for l:iss in l:data
+    execute "vnew"
 
-		if a:notes
-			let l:notes = []
-			let l:notescommand = "sh -c \"curl -s --header 'PRIVATE-TOKEN: ".g:gitlab_token."' ".g:gitlab_server.":".g:gitlab_server_port."/api/v4/projects/".g:gitlab_projectid."/issues/".l:iss["iid"]."/notes\""
-			let l:notesjson = system(l:notescommand)
-			let l:notesdata = json_decode(l:notesjson)
-			for l:note in l:notesdata
-				let l:notes += [ "* ".l:note["author"]["username"].":\n".l:note["body"] ]
-			endfor
-			
-			let l:notesout = join(l:notes, "\n")
-		else
-			let l:notesout = "Not loaded. Use `:GLOpenIssuesExt` to load comments."
-		endif
+    let l:index = 0
 
-		" milestone: no milestone or milestone data
-		let l:milestone = l:iss["milestone"]
-		let l:milestonetext = ""
-		if exists("l:milestone['iid']")
-			let l:ms_id = l:milestone['iid']
-			let l:ms_title = l:milestone['title']
-			let l:milestonetext = "\nMilestone: %".l:ms_id." ".l:ms_title
-		endif
+    for l:iss in l:data
+        let l:id = l:iss["iid"]
+        let l:title = l:iss["title"]
+        let l:tags = l:iss["labels"]
 
-		" description placeholder or real data
-		let l:desctext = "no description"
-		if l:iss["description"] != ""
-			let l:desctext = l:iss["description"]
-		endif
+        let l:issue_item_stringified = "#".l:id." - ".l:title." - [".join(l:tags,", ")."]"
 
-		let l:collection += [ "#".l:iss["iid"]."\t".l:iss["title"].l:milestonetext."\n\n".l:desctext."\n\nComments:\n".l:notesout ]
-	endfor
+        if l:index == 0
+            execute "normal i".l:issue_item_stringified
+        else
+            execute "normal o".l:issue_item_stringified
+        endif
 
-	let l:output = join(l:collection, "\n\n")
-	
-	if !exists("g:gl_issues_bufnr")
-		new
-		setlocal switchbuf=useopen,usetab
-		let g:gl_issues_bufnr = bufnr("%")
-	else
-		execute "sb".g:gl_issues_bufnr
-		normal ggVGd
-	endif
+        exec "normal o".l:iss["description"]
+        exec "normal o"
+
+        let l:index += 1
+    endfor
 
 	setlocal buftype=nofile
-	execute "normal i".output
+    execute "set ro"
 	normal gg
-	setlocal foldmethod=expr
-	setlocal foldexpr=getline(v\:lnum)=~'^#'?'>1'\:getline(v\:lnum)=~'^#'?'<1':1
-	setlocal foldtext=getline(v:foldstart)
-	syntax on
-	setlocal syntax=markdown
 endfunction
 
 " Section: Create a new issue
