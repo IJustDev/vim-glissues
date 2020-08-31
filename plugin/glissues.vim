@@ -44,6 +44,78 @@ function! s:ReadGitLabProjectIdFromConfig()
     endif
 endfunction
 
+function! s:LoadMergeRequests()
+    call s:ReadGitLabProjectIdFromConfig()
+	let l:command = "sh -c \"curl -s --header 'PRIVATE-TOKEN: ".g:gitlab_token."' ".g:gitlab_server.":".g:gitlab_server_port."/api/v4/projects/".g:gitlab_projectid."/merge_requests\""
+
+    let l:json = system(l:command)
+    let l:data = json_decode(l:json)
+
+    execute "vnew"
+
+    syntax match Success /success/
+    syntax match Failed /failed/
+    syntax match Pending /pending/
+    syntax match Canceled /canceled/
+
+    highlight Success ctermfg=green
+    highlight Failed ctermfg=red
+    highlight Pending ctermfg=cyan
+    highlight Canceled ctermfg=grey
+
+    let l:index = 0 
+
+    for l:pipeline in l:data
+        let l:timestamp = l:pipeline["created_at"]
+        let l:time = system("date -d ".l:timestamp." \"+%d.%m.%Y %H:%M:%S\"")
+        let l:str = l:pipeline["merge_status"]." - "." - ".l:time
+
+        if l:index == 0
+            execute "normal i".l:str
+        else
+            execute "normal o".l:str
+        endif
+
+        let l:index += 1
+    endfor
+endfunction
+
+function! s:LoadPipelines()
+    call s:ReadGitLabProjectIdFromConfig()
+	let l:command = "sh -c \"curl -s --header 'PRIVATE-TOKEN: ".g:gitlab_token."' ".g:gitlab_server.":".g:gitlab_server_port."/api/v4/projects/".g:gitlab_projectid."/pipelines\""
+
+    let l:json = system(l:command)
+    let l:data = json_decode(l:json)
+
+    execute "vnew"
+
+    syntax match Success /success/
+    syntax match Failed /failed/
+    syntax match Pending /pending/
+    syntax match Canceled /canceled/
+
+    highlight Success ctermfg=green
+    highlight Failed ctermfg=red
+    highlight Pending ctermfg=cyan
+    highlight Canceled ctermfg=grey
+
+    let l:index = 0 
+
+    for l:pipeline in l:data
+        let l:timestamp = l:pipeline["created_at"]
+        let l:time = system("date -d ".l:timestamp." \"+%d.%m.%Y %H:%M:%S\"")
+        let l:str = l:pipeline["status"]." - ".l:pipeline["ref"]. " - ".l:time
+
+        if l:index == 0
+            execute "normal i".l:str
+        else
+            execute "normal o".l:str
+        endif
+
+        let l:index += 1
+    endfor
+endfunction
+
 " Section: Loading of issues is done here
 "
 function! s:LoadIssues(state, notes)
@@ -53,13 +125,16 @@ function! s:LoadIssues(state, notes)
 	let l:data = json_decode(l:json)
 
     execute "vnew"
+    syn match IssueNumber /(#\d+)/
+
+    highlight IssueNumber ctermfg=magenta
 
     let l:index = 0
-
     for l:iss in l:data
         let l:id = l:iss["iid"]
         let l:title = l:iss["title"]
         let l:tags = l:iss["labels"]
+        let l:description = l:iss["description"]
 
         let l:issue_item_stringified = "#".l:id." - ".l:title." - [".join(l:tags,", ")."]"
 
@@ -69,14 +144,16 @@ function! s:LoadIssues(state, notes)
             execute "normal o".l:issue_item_stringified
         endif
 
-        exec "normal o".l:iss["description"]
+        exec "normal o{{{".l:iss["description"]
         exec "normal o"
 
         let l:index += 1
     endfor
 
 	setlocal buftype=nofile
-    execute "set ro"
+    setlocal foldmethod=marker
+    setlocal ro
+    set syntax="markdown"
 	normal gg
 endfunction
 
@@ -163,6 +240,14 @@ function! <SID>GLOpenIssues()
 	call s:LoadIssues("opened", v:false)
 endfunction
 
+function! <SID>GLOpenPipelines()
+	call s:LoadPipelines()
+endfunction
+
+function! <SID>GLOpenMergeRequests()
+	call s:LoadMergeRequests()
+endfunction
+
 function! <SID>GLOpenIssuesExt()
 	call s:LoadIssues("opened", v:true)
 endfunction
@@ -180,6 +265,8 @@ function! <SID>GLNewIssue()
 endfunction
 
 command! GLOpenIssues :call <SID>GLOpenIssues()
+command! GLOpenPipelines :call <SID>GLOpenPipelines()
+command! GLOpenMergeRequests :call <SID>GLOpenMergeRequests()
 command! GLOpenIssuesExt :call <SID>GLOpenIssuesExt()
 command! GLClosedIssues :call <SID>GLClosedIssues()
 command! GLClosedIssuesExt :call <SID>GLClosedIssuesExt()
